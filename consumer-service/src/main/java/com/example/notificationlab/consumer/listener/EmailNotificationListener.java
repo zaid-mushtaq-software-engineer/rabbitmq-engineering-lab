@@ -1,5 +1,6 @@
 package com.example.notificationlab.consumer.listener;
 
+import com.example.notificationlab.contracts.NotificationChannel;
 import com.example.notificationlab.contracts.NotificationMessage;
 import com.example.notificationlab.contracts.RabbitNames;
 import com.example.notificationlab.consumer.service.NotificationProcessingService;
@@ -21,7 +22,10 @@ public class EmailNotificationListener {
         this.processingService = processingService;
     }
 
-    @RabbitListener(queues = RabbitNames.EMAIL_QUEUE)
+    @RabbitListener(
+            queues = RabbitNames.EMAIL_QUEUE,
+            containerFactory = "emailListenerContainerFactory"
+    )
     public void onMessage(
             NotificationMessage message,
             @Header(AmqpHeaders.RECEIVED_ROUTING_KEY) String routingKey,
@@ -29,6 +33,6 @@ public class EmailNotificationListener {
     ) {
         log.info("message.received messageId={} routingKey={} redelivered={}",
                 message.getMessageId(), routingKey, redelivered);
-        processingService.process(message, redelivered);
+        processingService.process(message, redelivered, NotificationChannel.EMAIL, RabbitNames.EMAIL_CONSUMER);
     }
 }
