@@ -28,4 +28,16 @@ public class ConsumerRabbitTopologyConfig {
                 .to(notificationDirectExchange)
                 .with(RabbitNames.ROUTING_EMAIL);
     }
+
+    @Bean
+    Queue smsQueue() {
+        return QueueBuilder.durable(RabbitNames.SMS_QUEUE).build();
+    }
+
+    @Bean
+    Binding smsBinding(Queue smsQueue, DirectExchange notificationDirectExchange) {
+        return BindingBuilder.bind(smsQueue)
+                .to(notificationDirectExchange)
+                .with(RabbitNames.ROUTING_SMS);
+    }
 }

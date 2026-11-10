@@ -23,6 +23,12 @@ public final class RabbitNames {
     public static final String EMAIL_CONSUMER = "email-consumer";
     public static final String SMS_CONSUMER = "sms-consumer";
 
+    public static final String LAB_TOPIC_ALL_CHANNELS_QUEUE = "lab.topic.all-channels.queue";
+    public static final String LAB_TOPIC_EMAIL_ANY_QUEUE = "lab.topic.email-any.queue";
+    public static final String LAB_TOPIC_HIGH_PRIORITY_QUEUE = "lab.topic.high-priority.queue";
+    public static final String LAB_FANOUT_AUDIT_QUEUE = "lab.fanout.audit.queue";
+    public static final String LAB_FANOUT_ANALYTICS_QUEUE = "lab.fanout.analytics.queue";
+
     private RabbitNames() {
     }
 }
