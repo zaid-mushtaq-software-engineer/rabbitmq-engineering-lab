@@ -38,7 +38,7 @@ public class EmailDeliverySimulator {
 
     private void sleep(String recipient) {
         Duration delay = SLOW.equalsIgnoreCase(recipient)
-                ? Duration.ofSeconds(15)
+                ? properties.getSlowDelay()
                 : randomLatency();
         if (!delay.isZero()) {
             try {

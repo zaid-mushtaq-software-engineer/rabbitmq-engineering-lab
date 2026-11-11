@@ -38,7 +38,7 @@ public class SmsDeliverySimulator {
 
     private void sleep(String recipient) {
         Duration delay = SLOW.equals(recipient)
-                ? Duration.ofSeconds(15)
+                ? properties.getSlowDelay()
                 : randomLatency();
         if (!delay.isZero()) {
             try {

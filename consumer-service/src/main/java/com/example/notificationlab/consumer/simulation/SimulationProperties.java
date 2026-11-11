@@ -10,6 +10,7 @@ public class SimulationProperties {
     private boolean enabled = true;
     private Duration latencyMin = Duration.ofMillis(100);
     private Duration latencyMax = Duration.ofMillis(500);
+    private Duration slowDelay = Duration.ofSeconds(15);
 
     public boolean isEnabled() {
         return enabled;
@@ -33,5 +34,13 @@ public class SimulationProperties {
 
     public void setLatencyMax(Duration latencyMax) {
         this.latencyMax = latencyMax;
+    }
+
+    public Duration getSlowDelay() {
+        return slowDelay;
+    }
+
+    public void setSlowDelay(Duration slowDelay) {
+        this.slowDelay = slowDelay;
     }
 }

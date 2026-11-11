@@ -1,5 +1,6 @@
 package com.example.notificationlab.consumer.config;
 
+import org.springframework.amqp.core.AcknowledgeMode;
 import org.springframework.amqp.rabbit.config.SimpleRabbitListenerContainerFactory;
 import org.springframework.amqp.rabbit.connection.ConnectionFactory;
 import org.springframework.amqp.support.converter.MessageConverter;
@@ -45,6 +46,7 @@ public class ConsumerListenerConfig {
         factory.setConcurrentConsumers(concurrency);
         factory.setMaxConcurrentConsumers(maxConcurrency);
         factory.setPrefetchCount(prefetch);
+        factory.setAcknowledgeMode(AcknowledgeMode.MANUAL);
         return factory;
     }
 }
