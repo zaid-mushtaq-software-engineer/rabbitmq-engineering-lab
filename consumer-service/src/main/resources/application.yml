@@ -63,3 +63,6 @@ lab:
     enabled: true
     latency-min: 100ms
     latency-max: 500ms
+    slow-delay: 15s
+  ack:
+    defer-for-tests: false

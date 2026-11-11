@@ -11,6 +11,7 @@ import com.example.notificationlab.consumer.persistence.NotificationStatus;
 import com.example.notificationlab.consumer.simulation.EmailDeliverySimulator;
 import com.example.notificationlab.consumer.simulation.PermanentDeliveryException;
 import com.example.notificationlab.consumer.simulation.SmsDeliverySimulator;
+import com.example.notificationlab.consumer.messaging.DeliveryOutcome;
 import com.example.notificationlab.consumer.simulation.TemporaryDeliveryException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -42,7 +43,7 @@ public class NotificationProcessingService {
     }
 
     @Transactional
-    public void process(
+    public DeliveryOutcome process(
             NotificationMessage message,
             boolean redelivered,
             NotificationChannel expectedChannel,
@@ -51,7 +52,7 @@ public class NotificationProcessingService {
         if (message.getChannel() != expectedChannel) {
             log.warn("Channel mismatch for messageId={}: expected {}, got {}",
                     message.getMessageId(), expectedChannel, message.getChannel());
-            return;
+            return DeliveryOutcome.NACK_NO_REQUEUE;
         }
 
         Instant now = Instant.now();
@@ -66,8 +67,11 @@ public class NotificationProcessingService {
         try {
             deliver(message);
             recordSuccess(notification, message, now, redelivered, consumerName);
+            return DeliveryOutcome.ACK;
         } catch (TemporaryDeliveryException | PermanentDeliveryException ex) {
             log.warn("Delivery simulation failed for messageId={}: {}", message.getMessageId(), ex.getMessage());
+            // Phase 5 adds retry/DLQ; until then reject without requeue (no DLX yet — message dropped).
+            return DeliveryOutcome.NACK_NO_REQUEUE;
         }
     }
 
