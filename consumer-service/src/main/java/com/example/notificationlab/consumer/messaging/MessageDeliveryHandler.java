@@ -37,6 +37,10 @@ public class MessageDeliveryHandler {
                 channel.basicNack(deliveryTag, false, false);
                 log.info("nack.sent requeue=false deliveryTag={} messageId={}", deliveryTag, messageId);
             }
+            case NACK_REQUEUE -> {
+                channel.basicNack(deliveryTag, false, true);
+                log.info("nack.sent requeue=true deliveryTag={} messageId={}", deliveryTag, messageId);
+            }
         }
     }
 

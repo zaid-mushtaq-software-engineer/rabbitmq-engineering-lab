@@ -1,9 +1,9 @@
 package com.example.notificationlab.consumer.listener;
 
 import com.example.notificationlab.contracts.NotificationChannel;
-import com.example.notificationlab.contracts.NotificationMessage;
 import com.example.notificationlab.contracts.RabbitNames;
 import com.rabbitmq.client.Channel;
+import org.springframework.amqp.core.Message;
 import org.springframework.amqp.rabbit.annotation.RabbitListener;
 import org.springframework.amqp.support.AmqpHeaders;
 import org.springframework.messaging.handler.annotation.Header;
@@ -24,14 +24,14 @@ public class EmailNotificationListener {
             containerFactory = "emailListenerContainerFactory"
     )
     public void onMessage(
-            NotificationMessage message,
+            Message amqpMessage,
             Channel channel,
             @Header(AmqpHeaders.DELIVERY_TAG) long deliveryTag,
             @Header(AmqpHeaders.RECEIVED_ROUTING_KEY) String routingKey,
             @Header(value = AmqpHeaders.REDELIVERED, defaultValue = "false") boolean redelivered
     ) {
         listenerSupport.handle(
-                message,
+                amqpMessage,
                 redelivered,
                 NotificationChannel.EMAIL,
                 RabbitNames.EMAIL_CONSUMER,

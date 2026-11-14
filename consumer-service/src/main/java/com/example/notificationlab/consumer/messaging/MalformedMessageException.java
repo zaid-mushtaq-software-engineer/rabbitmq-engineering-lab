@@ -1,0 +1,12 @@
+package com.example.notificationlab.consumer.messaging;
+
+public class MalformedMessageException extends RuntimeException {
+
+  public MalformedMessageException(String message) {
+    super(message);
+  }
+
+  public MalformedMessageException(String message, Throwable cause) {
+    super(message, cause);
+  }
+}

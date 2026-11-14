@@ -30,6 +30,16 @@ class MessageDeliveryHandlerTest {
     }
 
     @Test
+    void nacksWithRequeue() throws Exception {
+        MessageDeliveryHandler handler = new MessageDeliveryHandler(false);
+        Channel channel = Mockito.mock(Channel.class);
+
+        handler.apply(channel, 3L, DeliveryOutcome.NACK_REQUEUE, "msg-3");
+
+        verify(channel).basicNack(3L, false, true);
+    }
+
+    @Test
     void defersAckWhenConfiguredForMessage() throws Exception {
         MessageDeliveryHandler handler = new MessageDeliveryHandler(true);
         handler.setDeferAckMessageId("defer-me");

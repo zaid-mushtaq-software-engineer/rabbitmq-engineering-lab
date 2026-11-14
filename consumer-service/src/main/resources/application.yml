@@ -47,6 +47,8 @@ management:
       show-details: when_authorized
 
 lab:
+  publisher:
+    confirm-timeout: 5s
   consumer:
     email:
       concurrency: 2
