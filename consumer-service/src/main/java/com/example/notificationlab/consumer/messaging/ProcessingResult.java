@@ -7,7 +7,9 @@ public final class ProcessingResult {
     public enum Step {
         ACK,
         NACK_NO_REQUEUE,
-        PUBLISH_RETRY_THEN_ACK
+        PUBLISH_RETRY_THEN_ACK,
+        DUPLICATE_ACK,
+        DUPLICATE_NACK_NO_REQUEUE
     }
 
     private final Step step;
@@ -26,6 +28,14 @@ public final class ProcessingResult {
 
     public static ProcessingResult nackNoRequeue(String messageId) {
         return new ProcessingResult(Step.NACK_NO_REQUEUE, messageId, null);
+    }
+
+    public static ProcessingResult duplicateAck(String messageId) {
+        return new ProcessingResult(Step.DUPLICATE_ACK, messageId, null);
+    }
+
+    public static ProcessingResult duplicateNackNoRequeue(String messageId) {
+        return new ProcessingResult(Step.DUPLICATE_NACK_NO_REQUEUE, messageId, null);
     }
 
     public static ProcessingResult publishRetryThenAck(String messageId, NotificationMessage retryMessage) {

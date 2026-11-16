@@ -111,8 +111,9 @@ public class ChannelNotificationListenerSupport {
 
     private void applyProcessingResult(Channel channel, long deliveryTag, ProcessingResult result) {
         switch (result.step()) {
-            case ACK -> applyOutcome(channel, deliveryTag, DeliveryOutcome.ACK, result.messageId());
-            case NACK_NO_REQUEUE -> applyOutcome(channel, deliveryTag, DeliveryOutcome.NACK_NO_REQUEUE, result.messageId());
+            case ACK, DUPLICATE_ACK -> applyOutcome(channel, deliveryTag, DeliveryOutcome.ACK, result.messageId());
+            case NACK_NO_REQUEUE, DUPLICATE_NACK_NO_REQUEUE ->
+                    applyOutcome(channel, deliveryTag, DeliveryOutcome.NACK_NO_REQUEUE, result.messageId());
             case PUBLISH_RETRY_THEN_ACK -> {
                 boolean confirmed = retryPublisher.publishWithConfirm(result.retryMessage());
                 DeliveryOutcome outcome = confirmed ? DeliveryOutcome.ACK : DeliveryOutcome.NACK_REQUEUE;
