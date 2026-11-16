@@ -100,6 +100,26 @@ public class GlobalExceptionHandler {
         return error(HttpStatus.NOT_FOUND, ErrorCodes.NOTIFICATION_NOT_FOUND, ex.getMessage(), request, List.of());
     }
 
+    @ExceptionHandler(MessagePublishException.class)
+    public ResponseEntity<ApiErrorResponse> handlePublishFailure(MessagePublishException ex, HttpServletRequest request) {
+        ErrorDetail detail = new ErrorDetail();
+        detail.setField(null);
+        detail.setReason(ex.getFailureReason());
+        ApiErrorResponse body = new ApiErrorResponse();
+        body.setTimestamp(Instant.now());
+        body.setStatus(HttpStatus.SERVICE_UNAVAILABLE.value());
+        body.setError(HttpStatus.SERVICE_UNAVAILABLE.getReasonPhrase());
+        body.setCode(ErrorCodes.MESSAGE_PUBLISH_FAILED);
+        body.setMessage("The notification could not be queued. It was not accepted for processing.");
+        body.setPath(request.getRequestURI());
+        body.setCorrelationId(resolveCorrelationId(request));
+        body.setDetails(List.of(detail));
+        body.setNotificationId(ex.getNotificationId());
+        return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
+                .header("Retry-After", "5")
+                .body(body);
+    }
+
     @ExceptionHandler(HttpMediaTypeNotSupportedException.class)
     public ResponseEntity<ApiErrorResponse> handleMediaType(HttpMediaTypeNotSupportedException ex, HttpServletRequest request) {
         return error(HttpStatus.UNSUPPORTED_MEDIA_TYPE, ErrorCodes.UNSUPPORTED_MEDIA_TYPE, "Unsupported media type.", request, List.of());

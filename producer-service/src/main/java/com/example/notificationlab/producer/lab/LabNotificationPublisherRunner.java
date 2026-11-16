@@ -41,7 +41,7 @@ public class LabNotificationPublisherRunner implements ApplicationRunner {
                 "Lab publish from producer-service",
                 "lab-run-1"
         );
-        publisher.publish(built.message());
+        publisher.publishWithConfirm(built.message());
         log.info("Published notification messageId={}", built.messageId());
         int exitCode = SpringApplication.exit(applicationContext, () -> 0);
         System.exit(exitCode);

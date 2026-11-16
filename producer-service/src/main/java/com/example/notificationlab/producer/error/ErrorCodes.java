@@ -11,6 +11,7 @@ public final class ErrorCodes {
     public static final String METHOD_NOT_ALLOWED = "METHOD_NOT_ALLOWED";
     public static final String UNSUPPORTED_MEDIA_TYPE = "UNSUPPORTED_MEDIA_TYPE";
     public static final String INTERNAL_ERROR = "INTERNAL_ERROR";
+    public static final String MESSAGE_PUBLISH_FAILED = "MESSAGE_PUBLISH_FAILED";
 
     private ErrorCodes() {
     }

@@ -54,11 +54,22 @@ class PersistentPublishIntegrationTest {
         }
 
         @Bean
+        PublisherConfirmCoordinator publisherConfirmCoordinator(RabbitTemplate rabbitTemplate) {
+            return new PublisherConfirmCoordinator(rabbitTemplate);
+        }
+
+        @Bean
         NotificationMessagePublisher notificationMessagePublisher(
                 RabbitTemplate rabbitTemplate,
-                RoutingKeySelector routingKeySelector
+                RoutingKeySelector routingKeySelector,
+                PublisherConfirmCoordinator publisherConfirmCoordinator
         ) {
-            return new NotificationMessagePublisher(rabbitTemplate, routingKeySelector);
+            return new NotificationMessagePublisher(
+                    rabbitTemplate,
+                    routingKeySelector,
+                    publisherConfirmCoordinator,
+                    java.time.Duration.ofSeconds(5)
+            );
         }
     }
 
@@ -93,7 +104,7 @@ class PersistentPublishIntegrationTest {
                 "persistence test",
                 "persist-it"
         );
-        publisher.publish(built.message());
+        assertThat(publisher.publishWithConfirm(built.message()).isConfirmed()).isTrue();
 
         await().atMost(Duration.ofSeconds(5)).untilAsserted(() ->
                 assertThat(queueDepth(RabbitNames.EMAIL_QUEUE)).isEqualTo(1));
