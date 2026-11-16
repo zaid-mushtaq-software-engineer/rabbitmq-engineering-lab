@@ -51,6 +51,8 @@ class NotificationApiIntegrationTest {
         registry.add("spring.datasource.url", MYSQL::getJdbcUrl);
         registry.add("spring.datasource.username", MYSQL::getUsername);
         registry.add("spring.datasource.password", MYSQL::getPassword);
+        registry.add("spring.rabbitmq.publisher-confirm-type", () -> "correlated");
+        registry.add("spring.rabbitmq.publisher-returns", () -> "true");
     }
 
     @Autowired

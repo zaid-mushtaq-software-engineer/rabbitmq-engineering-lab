@@ -24,4 +24,19 @@ public interface ProducerNotificationRepository extends JpaRepository<ProducerNo
             @Param("queuedAt") Instant queuedAt,
             @Param("updatedAt") Instant updatedAt
     );
+
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query("""
+            UPDATE ProducerNotificationEntity n
+            SET n.status = com.example.notificationlab.producer.persistence.ProducerNotificationStatus.PUBLISH_FAILED,
+                n.lastError = :lastError,
+                n.completedAt = :updatedAt,
+                n.updatedAt = :updatedAt
+            WHERE n.id = :id AND n.status = com.example.notificationlab.producer.persistence.ProducerNotificationStatus.PENDING_PUBLISH
+            """)
+    int markPublishFailedIfPendingPublish(
+            @Param("id") String id,
+            @Param("lastError") String lastError,
+            @Param("updatedAt") Instant updatedAt
+    );
 }

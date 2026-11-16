@@ -4,6 +4,7 @@ import com.example.notificationlab.producer.api.dto.SubmitNotificationResponse;
 import com.example.notificationlab.producer.config.ProducerJacksonConfig;
 import com.example.notificationlab.producer.error.CorrelationIdFilter;
 import com.example.notificationlab.producer.error.GlobalExceptionHandler;
+import com.example.notificationlab.producer.error.MessagePublishException;
 import com.example.notificationlab.producer.service.NotificationQueryService;
 import com.example.notificationlab.producer.service.NotificationSubmissionService;
 import org.junit.jupiter.api.Test;
@@ -60,6 +61,24 @@ class NotificationControllerWebMvcTest {
                 .andExpect(status().isAccepted())
                 .andExpect(header().string("Location", "/api/v1/notifications/" + id))
                 .andExpect(jsonPath("$.status").value("QUEUED"));
+    }
+
+    @Test
+    void publishFailureReturns503() throws Exception {
+        String id = UUID.randomUUID().toString();
+        when(submissionService.submit(any(), eq("corr-1")))
+                .thenThrow(new MessagePublishException(id, "Broker did not confirm the message within the configured timeout"));
+
+        mockMvc.perform(post("/api/v1/notifications")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .header(CorrelationIdFilter.HEADER, "corr-1")
+                        .content("""
+                                {"channel":"EMAIL","recipient":"a@example.com","message":"hi"}
+                                """))
+                .andExpect(status().isServiceUnavailable())
+                .andExpect(header().string("Retry-After", "5"))
+                .andExpect(jsonPath("$.code").value("MESSAGE_PUBLISH_FAILED"))
+                .andExpect(jsonPath("$.notificationId").value(id));
     }
 
     @Test

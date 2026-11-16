@@ -57,6 +57,21 @@ class ProducerNotificationRepositoryIT {
 
     @Test
     @Transactional
+    void markPublishFailedOnlyFromPendingPublish() {
+        String id = UUID.randomUUID().toString();
+        Instant now = Instant.now();
+        repository.save(sample(id, ProducerNotificationStatus.PENDING_PUBLISH));
+
+        int updated = repository.markPublishFailedIfPendingPublish(id, "broker timeout", now);
+        assertThat(updated).isEqualTo(1);
+        assertThat(repository.findById(id).orElseThrow().getStatus()).isEqualTo(ProducerNotificationStatus.PUBLISH_FAILED);
+
+        int second = repository.markPublishFailedIfPendingPublish(id, "again", now);
+        assertThat(second).isZero();
+    }
+
+    @Test
+    @Transactional
     void doesNotOverwriteProcessing() {
         String id = UUID.randomUUID().toString();
         Instant now = Instant.now();
