@@ -6,6 +6,8 @@ import com.example.notificationlab.contracts.RabbitNames;
 import com.example.notificationlab.consumer.persistence.NotificationAttemptRepository;
 import com.example.notificationlab.consumer.persistence.NotificationRepository;
 import com.example.notificationlab.consumer.persistence.NotificationStatus;
+import com.example.notificationlab.consumer.persistence.ProcessedMessageRepository;
+import com.example.notificationlab.consumer.persistence.ProcessedOutcome;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.amqp.core.Message;
@@ -70,6 +72,9 @@ class NotificationProcessingIntegrationTest {
     @Autowired
     private NotificationAttemptRepository attemptRepository;
 
+    @Autowired
+    private ProcessedMessageRepository processedMessageRepository;
+
     @BeforeEach
     void purgeQueues() {
         rabbitAdmin.purgeQueue(RabbitNames.EMAIL_QUEUE, false);
@@ -89,6 +94,11 @@ class NotificationProcessingIntegrationTest {
             assertThat(notification).isPresent();
             assertThat(notification.get().getStatus()).isEqualTo(NotificationStatus.SENT);
             assertThat(notification.get().getAttemptCount()).isEqualTo(1);
+            assertThat(processedMessageRepository.findById(payload.getMessageId()))
+                    .isPresent()
+                    .get()
+                    .extracting(p -> p.getOutcome())
+                    .isEqualTo(ProcessedOutcome.SENT);
         });
     }
 
@@ -106,6 +116,11 @@ class NotificationProcessingIntegrationTest {
                     .hasSize(1);
             assertThat(queueDepth(RabbitNames.DEAD_LETTER_QUEUE)).isEqualTo(1);
             assertThat(queueDepth(RabbitNames.EMAIL_QUEUE)).isZero();
+            assertThat(processedMessageRepository.findById(payload.getMessageId()))
+                    .isPresent()
+                    .get()
+                    .extracting(p -> p.getOutcome())
+                    .isEqualTo(ProcessedOutcome.DEAD_LETTERED);
         });
     }
 
@@ -125,6 +140,19 @@ class NotificationProcessingIntegrationTest {
     }
 
     @Test
+    void retryScheduledDoesNotWriteProcessedMessages() {
+        NotificationMessage payload = message(NotificationChannel.EMAIL, "temp-fail@example.com");
+        rabbitTemplate.convertAndSend(RabbitNames.DIRECT_EXCHANGE, RabbitNames.ROUTING_EMAIL, payload);
+
+        await().atMost(java.time.Duration.ofSeconds(15)).untilAsserted(() -> {
+            var record = notificationRepository.findById(payload.getNotificationId());
+            assertThat(record).isPresent();
+            assertThat(record.get().getStatus()).isEqualTo(NotificationStatus.RETRY_SCHEDULED);
+            assertThat(processedMessageRepository.findById(payload.getMessageId())).isEmpty();
+        });
+    }
+
+    @Test
     void flakyRecipientSucceedsAfterRetries() {
         NotificationMessage payload = message(NotificationChannel.EMAIL, "flaky@example.com");
         rabbitTemplate.convertAndSend(RabbitNames.DIRECT_EXCHANGE, RabbitNames.ROUTING_EMAIL, payload);
@@ -137,6 +165,11 @@ class NotificationProcessingIntegrationTest {
             assertThat(record.get().getAttemptCount()).isEqualTo(3);
             assertThat(queueDepth(RabbitNames.EMAIL_QUEUE)).isZero();
             assertThat(queueDepth(RabbitNames.EMAIL_RETRY_QUEUE)).isZero();
+            assertThat(processedMessageRepository.findById(payload.getMessageId()))
+                    .isPresent()
+                    .get()
+                    .extracting(p -> p.getOutcome())
+                    .isEqualTo(ProcessedOutcome.SENT);
         });
     }
 
@@ -154,6 +187,11 @@ class NotificationProcessingIntegrationTest {
             assertThat(record.get().getLastError()).contains("retries exhausted");
             assertThat(queueDepth(RabbitNames.DEAD_LETTER_QUEUE)).isEqualTo(1);
             assertThat(queueDepth(RabbitNames.EMAIL_QUEUE)).isZero();
+            assertThat(processedMessageRepository.findById(payload.getMessageId()))
+                    .isPresent()
+                    .get()
+                    .extracting(p -> p.getOutcome())
+                    .isEqualTo(ProcessedOutcome.DEAD_LETTERED);
         });
     }
 
