@@ -2,6 +2,7 @@ package com.example.notificationlab.producer.messaging;
 
 import com.example.notificationlab.contracts.NotificationMessage;
 import com.example.notificationlab.contracts.RabbitNames;
+import com.example.notificationlab.producer.observability.ProducerNotificationMetrics;
 import com.example.notificationlab.producer.service.RoutingKeySelector;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -23,17 +24,20 @@ public class NotificationMessagePublisher {
     private final RabbitTemplate rabbitTemplate;
     private final RoutingKeySelector routingKeySelector;
     private final PublisherConfirmCoordinator confirmCoordinator;
+    private final ProducerNotificationMetrics metrics;
     private final Duration confirmTimeout;
 
     public NotificationMessagePublisher(
             RabbitTemplate rabbitTemplate,
             RoutingKeySelector routingKeySelector,
             PublisherConfirmCoordinator confirmCoordinator,
+            ProducerNotificationMetrics metrics,
             @Value("${lab.publisher.confirm-timeout:5s}") Duration confirmTimeout
     ) {
         this.rabbitTemplate = rabbitTemplate;
         this.routingKeySelector = routingKeySelector;
         this.confirmCoordinator = confirmCoordinator;
+        this.metrics = metrics;
         this.confirmTimeout = confirmTimeout;
     }
 
@@ -60,6 +64,7 @@ public class NotificationMessagePublisher {
                     correlationData
             );
             PublishResult result = confirmCoordinator.awaitConfirm(trackingId, confirmTimeout.toMillis());
+            metrics.recordPublishResult(result.outcome());
             if (result.isConfirmed()) {
                 log.info("publish.confirmed messageId={}", notificationMessage.getMessageId());
             } else {
@@ -69,6 +74,7 @@ public class NotificationMessagePublisher {
         } catch (AmqpException ex) {
             log.warn("publish.broker_unavailable messageId={}: {}", notificationMessage.getMessageId(), ex.getMessage());
             confirmCoordinator.publishFailedBeforeSend(trackingId);
+            metrics.recordPublishResult(PublishOutcome.BROKER_UNAVAILABLE);
             return PublishResult.of(PublishOutcome.BROKER_UNAVAILABLE, ex.getMessage());
         }
     }

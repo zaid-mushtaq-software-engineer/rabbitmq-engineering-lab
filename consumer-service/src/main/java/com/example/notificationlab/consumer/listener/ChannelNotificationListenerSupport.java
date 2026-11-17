@@ -7,6 +7,7 @@ import com.example.notificationlab.consumer.messaging.MalformedMessageException;
 import com.example.notificationlab.consumer.messaging.MessageDeliveryHandler;
 import com.example.notificationlab.consumer.messaging.ProcessingResult;
 import com.example.notificationlab.consumer.messaging.RetryPublisher;
+import com.example.notificationlab.consumer.observability.DeliveryMdc;
 import com.example.notificationlab.consumer.service.NotificationProcessingService;
 import com.rabbitmq.client.Channel;
 import org.slf4j.Logger;
@@ -63,28 +64,33 @@ public class ChannelNotificationListenerSupport {
         }
 
         try {
-            validateMessage(message, expectedChannel);
-        } catch (MalformedMessageException ex) {
-            log.warn("message.malformed messageId={}: {}", message.getMessageId(), ex.getMessage());
-            applyProcessingResult(
-                    channel,
-                    deliveryTag,
-                    processingService.recordMalformedDeadLetter(message, expectedChannel, consumerName, ex.getMessage())
-            );
-            return;
-        }
+            DeliveryMdc.put(message);
+            try {
+                validateMessage(message, expectedChannel);
+            } catch (MalformedMessageException ex) {
+                log.warn("message.malformed messageId={}: {}", message.getMessageId(), ex.getMessage());
+                applyProcessingResult(
+                        channel,
+                        deliveryTag,
+                        processingService.recordMalformedDeadLetter(message, expectedChannel, consumerName, ex.getMessage())
+                );
+                return;
+            }
 
-        log.info("message.received messageId={} routingKey={} redelivered={}",
-                message.getMessageId(), routingKey, redelivered);
-        ProcessingResult result;
-        try {
-            result = processingService.process(message, redelivered, expectedChannel, consumerName);
-        } catch (RuntimeException ex) {
-            log.error("Unexpected error processing messageId={}", message.getMessageId(), ex);
-            applyOutcome(channel, deliveryTag, DeliveryOutcome.NACK_NO_REQUEUE, message.getMessageId());
-            return;
+            log.info("message.received messageId={} routingKey={} redelivered={}",
+                    message.getMessageId(), routingKey, redelivered);
+            ProcessingResult result;
+            try {
+                result = processingService.process(message, redelivered, expectedChannel, consumerName);
+            } catch (RuntimeException ex) {
+                log.error("Unexpected error processing messageId={}", message.getMessageId(), ex);
+                applyOutcome(channel, deliveryTag, DeliveryOutcome.NACK_NO_REQUEUE, message.getMessageId());
+                return;
+            }
+            applyProcessingResult(channel, deliveryTag, result);
+        } finally {
+            DeliveryMdc.clear();
         }
-        applyProcessingResult(channel, deliveryTag, result);
     }
 
     private void finishMalformed(

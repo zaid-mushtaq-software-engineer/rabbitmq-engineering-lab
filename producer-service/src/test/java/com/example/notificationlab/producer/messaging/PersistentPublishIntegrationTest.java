@@ -5,7 +5,9 @@ import com.example.notificationlab.contracts.RabbitNames;
 import com.example.notificationlab.producer.config.IntegrationRabbitTopologyConfig;
 import com.example.notificationlab.producer.config.ProducerRabbitTopologyConfig;
 import com.example.notificationlab.producer.config.RabbitMessagingConfig;
+import com.example.notificationlab.producer.observability.ProducerNotificationMetrics;
 import com.example.notificationlab.producer.service.MessageFactory;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import com.example.notificationlab.producer.service.RoutingKeySelector;
 import org.junit.jupiter.api.Test;
 import org.springframework.amqp.rabbit.core.RabbitAdmin;
@@ -54,6 +56,16 @@ class PersistentPublishIntegrationTest {
         }
 
         @Bean
+        SimpleMeterRegistry meterRegistry() {
+            return new SimpleMeterRegistry();
+        }
+
+        @Bean
+        ProducerNotificationMetrics producerNotificationMetrics(SimpleMeterRegistry meterRegistry) {
+            return new ProducerNotificationMetrics(meterRegistry);
+        }
+
+        @Bean
         PublisherConfirmCoordinator publisherConfirmCoordinator(RabbitTemplate rabbitTemplate) {
             return new PublisherConfirmCoordinator(rabbitTemplate);
         }
@@ -62,13 +74,15 @@ class PersistentPublishIntegrationTest {
         NotificationMessagePublisher notificationMessagePublisher(
                 RabbitTemplate rabbitTemplate,
                 RoutingKeySelector routingKeySelector,
-                PublisherConfirmCoordinator publisherConfirmCoordinator
+                PublisherConfirmCoordinator publisherConfirmCoordinator,
+                ProducerNotificationMetrics producerNotificationMetrics
         ) {
             return new NotificationMessagePublisher(
                     rabbitTemplate,
                     routingKeySelector,
                     publisherConfirmCoordinator,
-                    java.time.Duration.ofSeconds(5)
+                    producerNotificationMetrics,
+                    Duration.ofSeconds(5)
             );
         }
     }

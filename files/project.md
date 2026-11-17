@@ -343,6 +343,8 @@ Requirements are grouped by component. "Component" is the group heading. **Basis
 
 Non-functional requirements describe *qualities* of the system, not features. Items below are **design goals**. We do not invent numerical service-level targets; any number we later report must come from our own measurements (see NFR-03) and be labelled *measured*.
 
+**Phase 10 evidence log:** consolidated verification notes in [`notes/phase-10-nfr-evidence.md`](../notes/phase-10-nfr-evidence.md) (repository root, not one of the five core docs).
+
 | ID | Requirement and meaning | Why needed | How we address it | How we verify |
 |---|---|---|---|---|
 | NFR-01 | **Reliability** — an accepted notification is not silently lost. | The core value of using a broker. | Publisher confirms, persistent messages, durable queues, manual acks, retries, DLQ. | Failure experiments (Phase 10): kill consumer, restart broker, stop broker; count messages end-to-end. |
@@ -386,14 +388,40 @@ Non-functional requirements describe *qualities* of the system, not features. It
 | A-06 | Message bodies are small (under 1,000 characters). |
 | A-07 | The Producer and Consumer are deployed with compatible versions of `shared-contracts`. |
 
-## 14. Expected Final Outcome
+## 13.1 Quick start (local E2E)
 
-At the end of the roadmap we will have:
+1. **Prerequisites:** Java 21, Maven 3.9+, Docker Compose, `curl`, `jq` (assumption A-01).
+2. **Configuration:** Copy [`.env.example`](.env.example) to `.env` in the repo root (git-ignored) and set broker/DB credentials for Docker Compose.
+3. **Infrastructure:** From the repo root:
+   ```bash
+   docker compose -f docker/docker-compose.yml up -d
+   ```
+   Wait until RabbitMQ and MySQL are healthy.
+4. **Applications (host, not in Docker):** Start in this order so queues and bindings exist before the first publish:
+   ```bash
+   mvn -pl consumer-service spring-boot:run
+   ```
+   In a second terminal:
+   ```bash
+   mvn -pl producer-service spring-boot:run
+   ```
+5. **Automated unit/integration tests:** `mvn clean verify` (requires Docker for Testcontainers).
+6. **Full-stack smoke (both channels):** With both apps running:
+   ```bash
+   ./scripts/e2e-smoke.sh
+   ```
+   Expects `202` on submit and `SENT` on `GET` for one EMAIL and one SMS.
 
-1. A working Maven multi-module system that accepts notification requests, routes them through RabbitMQ and processes them independently.
-2. Observable behaviour for every reliability scenario in `implementation.md` section 12, backed by automated tests and recorded experiments.
-3. A developer who can explain, from experience: exchange types, acknowledgements, redelivery, publisher confirms, TTL, DLX, DLQ, prefetch, idempotency and why exactly-once processing is not a broker feature.
-4. Five consistent documents that match the running system.
+## 14. Final Outcome (Phase 10 — actual)
+
+The roadmap is complete. Delivered:
+
+1. **Working system** — Maven multi-module lab; Producer REST API; Consumer processors for EMAIL and SMS over RabbitMQ; MySQL status store. Local E2E: [`scripts/e2e-smoke.sh`](../scripts/e2e-smoke.sh) (see §13.1).
+2. **Reliability scenarios** — All nine cases in `implementation.md` section 12.2 evidenced in [`notes/phase-10-failure-scenarios.md`](../notes/phase-10-failure-scenarios.md) (automated tests + compose/UI experiments).
+3. **Learning goals** — Objectives in section 3 met via phased experiments and integration tests; retrospective in [`notes/phase-10-retrospective.md`](../notes/phase-10-retrospective.md).
+4. **Documentation** — Five core Markdown files under `documentation/` (mirrored in `files/`), consistency checklist in [`notes/phase-10-doc-consistency.md`](../notes/phase-10-doc-consistency.md).
+
+*Previous wording (pre-completion):* we expected the four bullets above; they are now satisfied as stated.
 
 ## 15. Decision Register
 
@@ -422,7 +450,7 @@ At the end of the roadmap we will have:
 | ID | Question |
 |---|---|
 | OQ-01 | How should DLQ messages be replayed, given that a replayed message has the same `messageId` and would be treated as a duplicate? (Likely: a deliberate replay procedure that clears the idempotency record or assigns a new `messageId`.) |
-| OQ-02 | Do we add a transactional outbox or a sweeper to close the Producer DB-write/publish gap? (Future.) |
+| OQ-02 | Do we add a transactional outbox or a sweeper to close the Producer DB-write/publish gap? **Mitigation (T-9.6):** Micrometer gauge `notifications.pending_publish.stuck` counts rows in `PENDING_PUBLISH` older than `lab.observability.stuck-pending-threshold`. Outbox remains a future option. |
 | OQ-03 | How does the Producer's integration test obtain the Consumer-owned schema? (Proposed: reuse the Flyway scripts via test resources.) |
 | OQ-04 | Do we add a processing lease to stop concurrent in-flight duplicates? |
 | OQ-05 | Do we add an `Idempotency-Key` request header to protect against client resubmission? (Future.) |

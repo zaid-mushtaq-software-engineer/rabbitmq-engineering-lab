@@ -1,5 +1,6 @@
 package com.example.notificationlab.producer.error;
 
+import com.example.notificationlab.contracts.ObservabilityKeys;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -16,7 +17,7 @@ import java.util.regex.Pattern;
 public class CorrelationIdFilter extends OncePerRequestFilter {
 
     public static final String HEADER = "X-Correlation-Id";
-    public static final String MDC_KEY = "correlationId";
+    public static final String MDC_KEY = ObservabilityKeys.MDC_CORRELATION_ID;
     public static final String REQUEST_ATTR = "correlationId";
 
     private static final Pattern CORRELATION_PATTERN = Pattern.compile("[A-Za-z0-9._-]{1,64}");

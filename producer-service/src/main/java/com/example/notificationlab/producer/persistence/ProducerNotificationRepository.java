@@ -39,4 +39,6 @@ public interface ProducerNotificationRepository extends JpaRepository<ProducerNo
             @Param("lastError") String lastError,
             @Param("updatedAt") Instant updatedAt
     );
+
+    long countByStatusAndCreatedAtBefore(ProducerNotificationStatus status, Instant createdAt);
 }

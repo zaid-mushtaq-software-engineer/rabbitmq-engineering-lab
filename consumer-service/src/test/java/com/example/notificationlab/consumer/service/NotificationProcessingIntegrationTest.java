@@ -1,8 +1,13 @@
 package com.example.notificationlab.consumer.service;
 
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
 import com.example.notificationlab.contracts.NotificationChannel;
 import com.example.notificationlab.contracts.NotificationMessage;
+import com.example.notificationlab.contracts.ObservabilityKeys;
 import com.example.notificationlab.contracts.RabbitNames;
+import io.micrometer.core.instrument.MeterRegistry;
 import com.example.notificationlab.consumer.persistence.NotificationAttemptRepository;
 import com.example.notificationlab.consumer.persistence.NotificationRepository;
 import com.example.notificationlab.consumer.persistence.NotificationStatus;
@@ -10,6 +15,7 @@ import com.example.notificationlab.consumer.persistence.ProcessedMessageReposito
 import com.example.notificationlab.consumer.persistence.ProcessedOutcome;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.slf4j.LoggerFactory;
 import org.springframework.amqp.core.Message;
 import org.springframework.amqp.core.MessageBuilder;
 import org.springframework.amqp.rabbit.core.RabbitAdmin;
@@ -74,6 +80,9 @@ class NotificationProcessingIntegrationTest {
 
     @Autowired
     private ProcessedMessageRepository processedMessageRepository;
+
+    @Autowired
+    private MeterRegistry meterRegistry;
 
     @BeforeEach
     void purgeQueues() {
@@ -209,6 +218,90 @@ class NotificationProcessingIntegrationTest {
     }
 
     @Test
+    void correlationIdInMdcLogPattern() {
+        ListAppender<ILoggingEvent> appender = attachLogAppender();
+        try {
+            NotificationMessage payload = messageWithCorrelation(NotificationChannel.EMAIL, "alice@example.com", "trace-demo-1");
+            rabbitTemplate.convertAndSend(RabbitNames.DIRECT_EXCHANGE, RabbitNames.ROUTING_EMAIL, payload);
+
+            await().atMost(java.time.Duration.ofSeconds(30)).untilAsserted(() -> {
+                assertThat(notificationRepository.findByMessageId(payload.getMessageId()))
+                        .isPresent()
+                        .get()
+                        .extracting(e -> e.getStatus())
+                        .isEqualTo(NotificationStatus.SENT);
+            });
+
+            assertThat(appender.list.stream().anyMatch(event ->
+                    "trace-demo-1".equals(event.getMDCPropertyMap().get(ObservabilityKeys.MDC_CORRELATION_ID))
+                            && event.getFormattedMessage().contains("attempt.succeeded")
+            )).isTrue();
+        } finally {
+            detachLogAppender(appender);
+        }
+    }
+
+    @Test
+    void logsDoNotContainRawRecipientOrMessageBody() {
+        String secretRecipient = "z-private-user@example.com";
+        String secretBody = "SUPER_SECRET_BODY_XYZ";
+        ListAppender<ILoggingEvent> appender = attachLogAppender();
+        try {
+            NotificationMessage payload = new NotificationMessage(
+                    UUID.randomUUID().toString(),
+                    UUID.randomUUID().toString(),
+                    NotificationChannel.EMAIL,
+                    secretRecipient,
+                    secretBody,
+                    Instant.now(),
+                    "privacy-corr-1",
+                    0
+            );
+            rabbitTemplate.convertAndSend(RabbitNames.DIRECT_EXCHANGE, RabbitNames.ROUTING_EMAIL, payload);
+
+            await().atMost(java.time.Duration.ofSeconds(30)).untilAsserted(() ->
+                    assertThat(notificationRepository.findByMessageId(payload.getMessageId()))
+                            .isPresent()
+                            .get()
+                            .extracting(e -> e.getStatus())
+                            .isEqualTo(NotificationStatus.SENT)
+            );
+
+            String combined = appender.list.stream().map(ILoggingEvent::getFormattedMessage).reduce("", String::concat);
+            assertThat(combined).doesNotContain(secretRecipient);
+            assertThat(combined).doesNotContain(secretBody);
+        } finally {
+            detachLogAppender(appender);
+        }
+    }
+
+    @Test
+    void successIncrementsProcessedCounter() {
+        var existing = meterRegistry.find("notifications.processed")
+                .tag("channel", "EMAIL")
+                .tag("outcome", "SENT")
+                .counter();
+        double before = existing == null ? 0 : existing.count();
+
+        NotificationMessage payload = message(NotificationChannel.EMAIL, "alice@example.com");
+        rabbitTemplate.convertAndSend(RabbitNames.DIRECT_EXCHANGE, RabbitNames.ROUTING_EMAIL, payload);
+
+        await().atMost(java.time.Duration.ofSeconds(30)).untilAsserted(() ->
+                assertThat(notificationRepository.findByMessageId(payload.getMessageId()))
+                        .isPresent()
+                        .get()
+                        .extracting(e -> e.getStatus())
+                        .isEqualTo(NotificationStatus.SENT)
+        );
+
+        assertThat(meterRegistry.get("notifications.processed")
+                .tag("channel", "EMAIL")
+                .tag("outcome", "SENT")
+                .counter()
+                .count()).isGreaterThan(before);
+    }
+
+    @Test
     void channelMismatchDeadLetters() {
         NotificationMessage wrongChannel = message(NotificationChannel.SMS, "alice@example.com");
         rabbitTemplate.convertAndSend(RabbitNames.DIRECT_EXCHANGE, RabbitNames.ROUTING_EMAIL, wrongChannel);
@@ -228,6 +321,14 @@ class NotificationProcessingIntegrationTest {
     }
 
     private static NotificationMessage message(NotificationChannel channel, String recipient) {
+        return messageWithCorrelation(channel, recipient, "phase-5-test");
+    }
+
+    private static NotificationMessage messageWithCorrelation(
+            NotificationChannel channel,
+            String recipient,
+            String correlationId
+    ) {
         return new NotificationMessage(
                 UUID.randomUUID().toString(),
                 UUID.randomUUID().toString(),
@@ -235,8 +336,21 @@ class NotificationProcessingIntegrationTest {
                 recipient,
                 "phase-5-test",
                 Instant.now(),
-                "phase-5-test",
+                correlationId,
                 0
         );
+    }
+
+    private static ListAppender<ILoggingEvent> attachLogAppender() {
+        ListAppender<ILoggingEvent> listAppender = new ListAppender<>();
+        listAppender.start();
+        Logger root = (Logger) LoggerFactory.getLogger(org.slf4j.Logger.ROOT_LOGGER_NAME);
+        root.addAppender(listAppender);
+        return listAppender;
+    }
+
+    private static void detachLogAppender(ListAppender<ILoggingEvent> listAppender) {
+        Logger root = (Logger) LoggerFactory.getLogger(org.slf4j.Logger.ROOT_LOGGER_NAME);
+        root.detachAppender(listAppender);
     }
 }

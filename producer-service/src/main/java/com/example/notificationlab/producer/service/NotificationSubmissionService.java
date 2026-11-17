@@ -1,6 +1,7 @@
 package com.example.notificationlab.producer.service;
 
 import com.example.notificationlab.contracts.NotificationChannel;
+import com.example.notificationlab.contracts.RecipientMasker;
 import com.example.notificationlab.producer.api.dto.SubmitNotificationRequest;
 import com.example.notificationlab.producer.api.dto.SubmitNotificationResponse;
 import com.example.notificationlab.producer.error.MessagePublishException;
@@ -9,7 +10,10 @@ import com.example.notificationlab.producer.messaging.NotificationMessagePublish
 import com.example.notificationlab.producer.messaging.PublishResult;
 import com.example.notificationlab.producer.persistence.ProducerNotificationEntity;
 import com.example.notificationlab.producer.persistence.ProducerNotificationRepository;
+import com.example.notificationlab.producer.observability.ProducerNotificationMetrics;
 import com.example.notificationlab.producer.persistence.ProducerNotificationStatus;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
@@ -19,20 +23,25 @@ import java.time.Instant;
 @Service
 public class NotificationSubmissionService {
 
+    private static final Logger log = LoggerFactory.getLogger(NotificationSubmissionService.class);
+
     private final MessageFactory messageFactory;
     private final NotificationMessagePublisher publisher;
     private final ProducerNotificationRepository repository;
+    private final ProducerNotificationMetrics metrics;
     private final TransactionTemplate transactionTemplate;
 
     public NotificationSubmissionService(
             MessageFactory messageFactory,
             NotificationMessagePublisher publisher,
             ProducerNotificationRepository repository,
+            ProducerNotificationMetrics metrics,
             PlatformTransactionManager transactionManager
     ) {
         this.messageFactory = messageFactory;
         this.publisher = publisher;
         this.repository = repository;
+        this.metrics = metrics;
         this.transactionTemplate = new TransactionTemplate(transactionManager);
     }
 
@@ -63,6 +72,15 @@ public class NotificationSubmissionService {
             record.setVersion(0L);
             repository.save(record);
         });
+
+        metrics.recordSubmitted(channel);
+        log.info(
+                "notification.accepted notificationId={} messageId={} channel={} recipient={}",
+                built.notificationId(),
+                built.messageId(),
+                channel.name(),
+                RecipientMasker.mask(request.getRecipient())
+        );
 
         PublishResult publishResult = publisher.publishWithConfirm(built.message());
 
