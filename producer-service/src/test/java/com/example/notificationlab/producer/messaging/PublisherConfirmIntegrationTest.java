@@ -6,6 +6,8 @@ import com.example.notificationlab.producer.config.ProducerRabbitTopologyConfig;
 import com.example.notificationlab.producer.config.RabbitMessagingConfig;
 import com.example.notificationlab.producer.service.MessageFactory;
 import com.example.notificationlab.producer.service.RoutingKeySelector;
+import com.example.notificationlab.producer.observability.ProducerNotificationMetrics;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.autoconfigure.ImportAutoConfiguration;
@@ -47,6 +49,16 @@ class PublisherConfirmIntegrationTest {
         }
 
         @Bean
+        SimpleMeterRegistry meterRegistry() {
+            return new SimpleMeterRegistry();
+        }
+
+        @Bean
+        ProducerNotificationMetrics producerNotificationMetrics(SimpleMeterRegistry meterRegistry) {
+            return new ProducerNotificationMetrics(meterRegistry);
+        }
+
+        @Bean
         PublisherConfirmCoordinator publisherConfirmCoordinator(
                 org.springframework.amqp.rabbit.core.RabbitTemplate rabbitTemplate
         ) {
@@ -57,12 +69,14 @@ class PublisherConfirmIntegrationTest {
         NotificationMessagePublisher notificationMessagePublisher(
                 org.springframework.amqp.rabbit.core.RabbitTemplate rabbitTemplate,
                 RoutingKeySelector routingKeySelector,
-                PublisherConfirmCoordinator publisherConfirmCoordinator
+                PublisherConfirmCoordinator publisherConfirmCoordinator,
+                ProducerNotificationMetrics producerNotificationMetrics
         ) {
             return new NotificationMessagePublisher(
                     rabbitTemplate,
                     routingKeySelector,
                     publisherConfirmCoordinator,
+                    producerNotificationMetrics,
                     java.time.Duration.ofSeconds(5)
             );
         }

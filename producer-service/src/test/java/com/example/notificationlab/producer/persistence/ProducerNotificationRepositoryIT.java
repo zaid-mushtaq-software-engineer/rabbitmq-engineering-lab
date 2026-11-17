@@ -72,6 +72,22 @@ class ProducerNotificationRepositoryIT {
 
     @Test
     @Transactional
+    void countsStuckPendingPublishRows() {
+        String id = UUID.randomUUID().toString();
+        Instant old = Instant.parse("2020-01-01T00:00:00Z");
+        ProducerNotificationEntity entity = sample(id, ProducerNotificationStatus.PENDING_PUBLISH);
+        entity.setCreatedAt(old);
+        repository.save(entity);
+
+        long count = repository.countByStatusAndCreatedAtBefore(
+                ProducerNotificationStatus.PENDING_PUBLISH,
+                Instant.parse("2025-01-01T00:00:00Z")
+        );
+        assertThat(count).isEqualTo(1);
+    }
+
+    @Test
+    @Transactional
     void doesNotOverwriteProcessing() {
         String id = UUID.randomUUID().toString();
         Instant now = Instant.now();

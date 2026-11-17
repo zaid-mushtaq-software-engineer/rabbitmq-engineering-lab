@@ -18,7 +18,9 @@ import com.example.notificationlab.consumer.persistence.ProcessedOutcome;
 import com.example.notificationlab.consumer.simulation.EmailDeliverySimulator;
 import com.example.notificationlab.consumer.simulation.PermanentDeliveryException;
 import com.example.notificationlab.consumer.simulation.SmsDeliverySimulator;
+import com.example.notificationlab.consumer.observability.ConsumerNotificationMetrics;
 import com.example.notificationlab.consumer.simulation.TemporaryDeliveryException;
+import io.micrometer.core.instrument.Timer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -42,6 +44,7 @@ public class NotificationProcessingService {
     private final EmailDeliverySimulator emailDeliverySimulator;
     private final SmsDeliverySimulator smsDeliverySimulator;
     private final FailureClassifier failureClassifier;
+    private final ConsumerNotificationMetrics metrics;
     private final TransactionTemplate transactionTemplate;
     private final int maxRetries;
 
@@ -52,6 +55,7 @@ public class NotificationProcessingService {
             EmailDeliverySimulator emailDeliverySimulator,
             SmsDeliverySimulator smsDeliverySimulator,
             FailureClassifier failureClassifier,
+            ConsumerNotificationMetrics metrics,
             PlatformTransactionManager transactionManager,
             @Value("${lab.retry.max-retries:3}") int maxRetries
     ) {
@@ -61,6 +65,7 @@ public class NotificationProcessingService {
         this.emailDeliverySimulator = emailDeliverySimulator;
         this.smsDeliverySimulator = smsDeliverySimulator;
         this.failureClassifier = failureClassifier;
+        this.metrics = metrics;
         this.transactionTemplate = new TransactionTemplate(transactionManager);
         this.maxRetries = maxRetries;
     }
@@ -71,24 +76,31 @@ public class NotificationProcessingService {
             NotificationChannel expectedChannel,
             String consumerName
     ) {
-        Optional<ProcessedMessageEntity> existing = idempotencyService.findFinalOutcome(message.getMessageId());
-        if (existing.isPresent()) {
-            return duplicateIgnoredOutcome(existing.get().getOutcome(), message.getMessageId(), redelivered);
-        }
-
-        Instant now = Instant.now();
-        NotificationEntity notification;
+        Timer.Sample sample = metrics.startProcessingTimer();
         try {
-            notification = beginAttempt(message, now);
-        } catch (DuplicateOutcomeException ex) {
-            return duplicateIgnoredOutcome(ex.outcome(), message.getMessageId(), redelivered);
-        }
+            Optional<ProcessedMessageEntity> existing = idempotencyService.findFinalOutcome(message.getMessageId());
+            if (existing.isPresent()) {
+                return duplicateIgnoredOutcome(
+                        existing.get().getOutcome(), message.getMessageId(), message.getChannel(), redelivered
+                );
+            }
 
-        try {
-            deliver(message);
-            return commitSuccess(notification, message, Instant.now(), redelivered, consumerName);
-        } catch (TemporaryDeliveryException | PermanentDeliveryException ex) {
-            return handleDeliveryFailure(notification, message, Instant.now(), redelivered, consumerName, ex);
+            Instant now = Instant.now();
+            NotificationEntity notification;
+            try {
+                notification = beginAttempt(message, now);
+            } catch (DuplicateOutcomeException ex) {
+                return duplicateIgnoredOutcome(ex.outcome(), message.getMessageId(), message.getChannel(), redelivered);
+            }
+
+            try {
+                deliver(message);
+                return commitSuccess(notification, message, Instant.now(), redelivered, consumerName);
+            } catch (TemporaryDeliveryException | PermanentDeliveryException ex) {
+                return handleDeliveryFailure(notification, message, Instant.now(), redelivered, consumerName, ex);
+            }
+        } finally {
+            metrics.stopProcessingTimer(sample, message.getChannel());
         }
     }
 
@@ -104,7 +116,8 @@ public class NotificationProcessingService {
 
         Optional<ProcessedMessageEntity> existing = idempotencyService.findFinalOutcome(messageId);
         if (existing.isPresent()) {
-            return duplicateIgnoredOutcome(existing.get().getOutcome(), messageId, false);
+            NotificationChannel channel = partial.getChannel() != null ? partial.getChannel() : expectedChannel;
+            return duplicateIgnoredOutcome(existing.get().getOutcome(), messageId, channel, false);
         }
 
         Instant now = Instant.now();
@@ -147,7 +160,8 @@ public class NotificationProcessingService {
                 return ProcessingResult.nackNoRequeue(messageId);
             });
         } catch (DataIntegrityViolationException ex) {
-            return duplicateAfterRace(messageId, false);
+            NotificationChannel channel = partial.getChannel() != null ? partial.getChannel() : expectedChannel;
+            return duplicateAfterRace(messageId, channel, false);
         }
     }
 
@@ -182,9 +196,9 @@ public class NotificationProcessingService {
                 return ProcessingResult.ack(message.getMessageId());
             });
         } catch (DataIntegrityViolationException ex) {
-            return duplicateAfterRace(message.getMessageId(), redelivered);
+            return duplicateAfterRace(message.getMessageId(), message.getChannel(), redelivered);
         } catch (DuplicateOutcomeException ex) {
-            return duplicateIgnoredOutcome(ex.outcome(), message.getMessageId(), redelivered);
+            return duplicateIgnoredOutcome(ex.outcome(), message.getMessageId(), message.getChannel(), redelivered);
         }
     }
 
@@ -214,6 +228,7 @@ public class NotificationProcessingService {
             });
 
             NotificationMessage retryCopy = copyForRetry(message);
+            metrics.recordRetryScheduled(message.getChannel());
             log.info("retry.scheduled messageId={} retryCount={}", message.getMessageId(), retryCopy.getRetryCount());
             return ProcessingResult.publishRetryThenAck(message.getMessageId(), retryCopy);
         }
@@ -234,11 +249,17 @@ public class NotificationProcessingService {
                 return ProcessingResult.nackNoRequeue(message.getMessageId());
             });
         } catch (DataIntegrityViolationException ex2) {
-            return duplicateAfterRace(message.getMessageId(), redelivered);
+            return duplicateAfterRace(message.getMessageId(), message.getChannel(), redelivered);
         }
     }
 
-    private ProcessingResult duplicateIgnoredOutcome(ProcessedOutcome outcome, String messageId, boolean redelivered) {
+    private ProcessingResult duplicateIgnoredOutcome(
+            ProcessedOutcome outcome,
+            String messageId,
+            NotificationChannel channel,
+            boolean redelivered
+    ) {
+        metrics.recordDuplicate(channel);
         idempotencyService.logDuplicateIgnored(messageId, outcome, redelivered);
         if (outcome == ProcessedOutcome.SENT) {
             return ProcessingResult.duplicateAck(messageId);
@@ -246,10 +267,10 @@ public class NotificationProcessingService {
         return ProcessingResult.duplicateNackNoRequeue(messageId);
     }
 
-    private ProcessingResult duplicateAfterRace(String messageId, boolean redelivered) {
+    private ProcessingResult duplicateAfterRace(String messageId, NotificationChannel channel, boolean redelivered) {
         ProcessedMessageEntity winner = idempotencyService.findFinalOutcome(messageId)
                 .orElseThrow(() -> new IllegalStateException("Expected processed_messages row for " + messageId));
-        return duplicateIgnoredOutcome(winner.getOutcome(), messageId, redelivered);
+        return duplicateIgnoredOutcome(winner.getOutcome(), messageId, channel, redelivered);
     }
 
     private void applySuccessOutcome(
@@ -261,6 +282,14 @@ public class NotificationProcessingService {
     ) {
         int attemptNumber = notification.getAttemptCount() + 1;
         recordAttempt(notification, message, attemptNumber, AttemptOutcome.SUCCESS, null, redelivered, consumerName, now);
+        log.info(
+                "attempt.succeeded messageId={} channel={} attemptNumber={} retryCount={} redelivered={}",
+                message.getMessageId(),
+                message.getChannel(),
+                attemptNumber,
+                message.getRetryCount(),
+                redelivered
+        );
 
         notification.setStatus(NotificationStatus.SENT);
         notification.setAttemptCount(attemptNumber);
@@ -275,6 +304,7 @@ public class NotificationProcessingService {
                 ProcessedOutcome.SENT,
                 now
         );
+        metrics.recordProcessed(message.getChannel(), ProcessedOutcome.SENT);
     }
 
     private void applyDeadLetterOutcome(
@@ -304,6 +334,8 @@ public class NotificationProcessingService {
                 ProcessedOutcome.DEAD_LETTERED,
                 now
         );
+        NotificationChannel channel = message.getChannel() != null ? message.getChannel() : notification.getChannel();
+        metrics.recordProcessed(channel, ProcessedOutcome.DEAD_LETTERED);
     }
 
     private String exhaustedRetriesMessage() {

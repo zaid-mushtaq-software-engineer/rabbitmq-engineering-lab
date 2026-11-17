@@ -479,7 +479,7 @@ A single `GlobalExceptionHandler` converts exceptions into the standard error bo
 
 **Management UI watch-list:** per queue Ready / Unacked / Total; consumer count; publish and ack rates; `notification.dlq` depth (should stay 0 in normal operation); connections and channels; returned (unroutable) messages.
 
-**Operational query:** notifications in `PENDING_PUBLISH` older than a few minutes indicate the Producer crashed between DB write and publish.
+**Operational query:** notifications in `PENDING_PUBLISH` older than a few minutes indicate the Producer crashed between DB write and publish. Micrometer gauge `notifications.pending_publish.stuck` (T-9.6) counts such rows using `lab.observability.stuck-pending-threshold`.
 
 ## 15. Testing Strategy
 
@@ -531,6 +531,7 @@ A separate end-to-end test module that starts both applications is a **future** 
 | `spring.datasource.*` | MySQL, user per service, password from env | both |
 | `spring.jpa.hibernate.ddl-auto` | `validate` | both |
 | `lab.api.default-page-size`, `max-page-size` | 20, 100 | producer |
+| `lab.observability.stuck-pending-threshold` | `5m` | producer |
 
 ## 18. Security Considerations
 
